@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "898576637613",
+    "project_id": "socmed-8bed3",
+    "storage_bucket": "socmed-8bed3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:898576637613:android:e10084fd08033bc1c93024",
+        "android_client_info": {
+          "package_name": "com.example.socmed_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "898576637613-3ht45ejr9sn8nuihv2edbgas89ovgj9m.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.socmed_app",
+            "certificate_hash": "8731eb3708f1d4f9c0c54303d250699eda0cbd50"
+          }
+        },
+        {
+          "client_id": "898576637613-95ku0isotmdtntol4gldlbn2lml1ujep.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD0fO81UpFKHYe6AbtdUWnqA_nKfWn6XnI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "898576637613-95ku0isotmdtntol4gldlbn2lml1ujep.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

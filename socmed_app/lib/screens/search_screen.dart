@@ -31,8 +31,8 @@ class _SearchScreenState extends State<SearchScreen> {
       'isUser': false,
     },
     {
-      'username': 'fanboi_ryu',
-      'fullName': 'John Eddie Ybut • Following',
+      'username': 'joven',
+      'fullName': 'joven • Following',
       'imageUrl': 'https://i.pravatar.cc/150?img=8',
       'isUser': true,
     },
@@ -51,11 +51,11 @@ class _SearchScreenState extends State<SearchScreen> {
       'isUser': true,
     },
     {
-      'username': 'rei young',
+      'username': 'rei ',
       'isUser': false,
     },
     {
-      'username': 'raine tolentino',
+      'username': 'raine',
       'isUser': false,
     },
   ];
@@ -126,7 +126,7 @@ class _SearchScreenState extends State<SearchScreen> {
                             padding: const EdgeInsets.all(2),
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              gradient: item['username'] == 'blythe' 
+                              gradient: item['username'] == 'blythe'
                                 ? const LinearGradient(colors: [Colors.yellow, Colors.red, Colors.purple])
                                 : null,
                             ),

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 
+// --- MODEL: DATA PARA SA EXPLORE ---
 class ExplorePost {
   final String id;
   final String username;
@@ -8,7 +11,9 @@ class ExplorePost {
   final String caption;
   String reaction;
   int likesCount;
-  final List<String> comments;
+  bool isFollowing;
+  bool isSaved;
+  final List<Map<String, String>> comments; // Map para may 'user' at 'text'
 
   ExplorePost({
     required this.id,
@@ -18,8 +23,13 @@ class ExplorePost {
     required this.caption,
     this.reaction = 'None',
     this.likesCount = 0,
-    List<String>? comments,
-  }) : comments = comments ?? [];
+    this.isFollowing = false,
+    this.isSaved = false,
+    List<Map<String, String>>? comments,
+  }) : comments = comments ?? [
+    {'user': 'traveler_01', 'text': 'Ganda naman dito! 😍'},
+    {'user': 'snap_master', 'text': 'Solid shot! 🔥'},
+  ];
 }
 
 class ExploreScreen extends StatefulWidget {
@@ -30,31 +40,48 @@ class ExploreScreen extends StatefulWidget {
 }
 
 class _ExploreScreenState extends State<ExploreScreen> {
-  final List<ExplorePost> _explorePosts = List.generate(
-    50,
-    (index) => ExplorePost(
-      id: index.toString(),
-      username: 'explore_user_$index',
-      userProfileImage: 'https://i.pravatar.cc/150?img=${(index % 50) + 1}',
-      imageUrls: index % 3 == 0 
-        ? ['https://picsum.photos/600/800?random=$index', 'https://picsum.photos/600/800?random=${index+500}']
-        : ['https://picsum.photos/600/800?random=$index'],
-      caption: 'Discovering something new! #explore #vibe #post$index',
-      likesCount: (index + 1) * 15,
-    ),
-  );
+  final String currentUser = 'kriselz_';
+  late List<ExplorePost> _explorePosts;
+
+  @override
+  void initState() {
+    super.initState();
+    _explorePosts = List.generate(
+      50,
+          (index) => ExplorePost(
+        id: index.toString(),
+        username: index == 0 ? currentUser : 'explore_user_$index',
+        userProfileImage: 'https://i.pravatar.cc/150?img=${(index % 50) + 1}',
+        imageUrls: index % 3 == 0
+            ? ['https://picsum.photos/600/800?random=$index', 'https://picsum.photos/600/800?random=${index + 500}']
+            : ['https://picsum.photos/600/800?random=$index'],
+        caption: 'Discovering something new! #explore #vibe #post$index',
+        likesCount: (index + 1) * 15,
+      ),
+    );
+  }
+
+  void _removePost(String id) {
+    setState(() {
+      _explorePosts.removeWhere((post) => post.id == id);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    bool isWeb = MediaQuery.of(context).size.width > 800;
-
     return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text("Explore", style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+      ),
       body: GridView.builder(
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: isWeb ? 4 : 3,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
           mainAxisSpacing: 2,
           crossAxisSpacing: 2,
-          childAspectRatio: 1,
         ),
         itemCount: _explorePosts.length,
         itemBuilder: (context, index) {
@@ -67,27 +94,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   builder: (context) => ExploreFeedView(
                     posts: _explorePosts,
                     initialIndex: index,
+                    currentUser: currentUser,
+                    onPostRemoved: (id) => _removePost(id),
                   ),
                 ),
-              ).then((_) => setState(() {})); // Rebuild grid when coming back
+              ).then((_) => setState(() {}));
             },
-            child: ClipRRect(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.network(
-                    post.imageUrls[0],
-                    fit: BoxFit.cover,
-                  ),
-                  if (post.imageUrls.length > 1)
-                    const Positioned(
-                      top: 10,
-                      right: 10,
-                      child: Icon(Icons.collections, color: Colors.white, size: 20),
-                    ),
-                ],
-              ),
-            ),
+            child: Image.network(post.imageUrls[0], fit: BoxFit.cover),
           );
         },
       ),
@@ -98,12 +111,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
 class ExploreFeedView extends StatefulWidget {
   final List<ExplorePost> posts;
   final int initialIndex;
+  final String currentUser;
+  final Function(String) onPostRemoved;
 
-  const ExploreFeedView({
-    super.key,
-    required this.posts,
-    required this.initialIndex,
-  });
+  const ExploreFeedView({super.key, required this.posts, required this.initialIndex, required this.currentUser, required this.onPostRemoved});
 
   @override
   State<ExploreFeedView> createState() => _ExploreFeedViewState();
@@ -119,30 +130,24 @@ class _ExploreFeedViewState extends State<ExploreFeedView> {
   }
 
   @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
+      appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0),
       body: PageView.builder(
         controller: _pageController,
         scrollDirection: Axis.vertical,
         itemCount: widget.posts.length,
         itemBuilder: (context, index) {
-          return ExploreFeedItem(post: widget.posts[index]);
+          return ExploreFeedItem(
+            post: widget.posts[index],
+            currentUser: widget.currentUser,
+            onRemove: () {
+              widget.onPostRemoved(widget.posts[index].id);
+              Navigator.pop(context);
+            },
+          );
         },
       ),
     );
@@ -151,115 +156,88 @@ class _ExploreFeedViewState extends State<ExploreFeedView> {
 
 class ExploreFeedItem extends StatefulWidget {
   final ExplorePost post;
+  final String currentUser;
+  final VoidCallback onRemove;
 
-  const ExploreFeedItem({super.key, required this.post});
+  const ExploreFeedItem({super.key, required this.post, required this.currentUser, required this.onRemove});
 
   @override
   State<ExploreFeedItem> createState() => _ExploreFeedItemState();
 }
 
 class _ExploreFeedItemState extends State<ExploreFeedItem> {
-  bool _showReactions = false;
-  int _currentImageIndex = 0;
   final PageController _imagePageController = PageController();
+  final GlobalKey _reactionButtonKey = GlobalKey();
+  OverlayEntry? _reactionOverlay;
 
   final List<Map<String, String>> reactionsList = [
-    {'name': 'Love', 'icon': '❤️', 'color': '0xFFF44336'},
-    {'name': 'Haha', 'icon': '😆', 'color': '0xFFFFC107'},
-    {'name': 'Wow', 'icon': '😮', 'color': '0xFFFFC107'},
-    {'name': 'Sad', 'icon': '😢', 'color': '0xFFFFC107'},
-    {'name': 'Angry', 'icon': '😡', 'color': '0xFFE91E63'},
+    {'name': 'Love', 'icon': '❤️'},
+    {'name': 'Haha', 'icon': '😆'},
+    {'name': 'Wow', 'icon': '😮'},
+    {'name': 'Sad', 'icon': '😢'},
+    {'name': 'Angry', 'icon': '😡'},
   ];
 
-  @override
-  void dispose() {
-    _imagePageController.dispose();
-    super.dispose();
-  }
-
-  void _toggleReactions() {
-    setState(() {
-      _showReactions = !_showReactions;
-    });
-  }
-
-  Widget _getReactionIcon() {
-    if (widget.post.reaction == 'None') {
-      return const Icon(Icons.favorite_border, color: Colors.white, size: 30);
-    }
-    if (widget.post.reaction == 'Like' || widget.post.reaction == 'Love') {
-      return const Icon(Icons.favorite, color: Colors.red, size: 30);
-    }
-    final react = reactionsList.firstWhere(
-      (r) => r['name'] == widget.post.reaction,
-      orElse: () => reactionsList[0],
-    );
-    return Text(react['icon']!, style: const TextStyle(fontSize: 30));
-  }
-
-  void _showCommentSheet() {
-    final TextEditingController controller = TextEditingController();
+  // --- CONSISTENT COMMENT SHEET ---
+  void _showCommentsSheet() {
+    TextEditingController commentController = TextEditingController();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: Container(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: SizedBox(
             height: MediaQuery.of(context).size.height * 0.6,
-            padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                const Text(
-                  'Comments',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                Container(
+                  width: 40, 
+                  height: 4, 
+                  margin: const EdgeInsets.symmetric(vertical: 10), 
+                  decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))
                 ),
+                const Text("Comments", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 const Divider(),
                 Expanded(
                   child: ListView.builder(
                     itemCount: widget.post.comments.length,
-                    itemBuilder: (context, i) => ListTile(
-                      leading: const CircleAvatar(
-                        radius: 15,
-                        backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=11'),
-                      ),
-                      title: Text(widget.post.comments[i]),
-                    ),
+                    itemBuilder: (context, index) {
+                      final comment = widget.post.comments[index];
+                      return ListTile(
+                        leading: const CircleAvatar(radius: 14, child: Icon(Icons.person, size: 18)),
+                        title: RichText(
+                          text: TextSpan(
+                            style: const TextStyle(color: Colors.black, fontSize: 14),
+                            children: [
+                              TextSpan(text: '${comment['user']} ', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              TextSpan(text: comment['text']),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: controller,
-                        decoration: const InputDecoration(
-                          hintText: 'Add a comment...',
-                          border: InputBorder.none,
-                        ),
+                Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Row(
+                    children: [
+                      Expanded(child: TextField(controller: commentController, decoration: const InputDecoration(hintText: "Add a comment...", border: InputBorder.none))),
+                      TextButton(
+                        onPressed: () {
+                          if (commentController.text.isNotEmpty) {
+                            setState(() => widget.post.comments.add({'user': widget.currentUser, 'text': commentController.text}));
+                            setModalState(() {});
+                            commentController.clear();
+                          }
+                        },
+                        child: const Text("Post", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
                       ),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        if (controller.text.isNotEmpty) {
-                          setState(() {
-                            widget.post.comments.add(controller.text);
-                          });
-                          setModalState(() {});
-                          controller.clear();
-                        }
-                      },
-                      child: const Text(
-                        'Post',
-                        style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -267,6 +245,112 @@ class _ExploreFeedItemState extends State<ExploreFeedItem> {
         ),
       ),
     );
+  }
+
+  // --- CONSISTENT 3-DOTS OPTIONS ---
+  void _showMoreOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 15), decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+            if (widget.post.username == widget.currentUser)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red), 
+                title: const Text('Delete Post', style: TextStyle(color: Colors.red)), 
+                onTap: () { Navigator.pop(context); widget.onRemove(); }
+              ),
+            ListTile(
+              leading: const Icon(Icons.report_gmailerrorred, color: Colors.red), 
+              title: const Text('Report', style: TextStyle(color: Colors.red)), 
+              onTap: () { 
+                Navigator.pop(context); 
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reported.')));
+              }
+            ),
+            ListTile(
+              leading: const Icon(Icons.visibility_off_outlined), 
+              title: const Text('Not Interested'), 
+              onTap: () { 
+                Navigator.pop(context); 
+                widget.onRemove(); 
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('We will show fewer posts like this.')));
+              }
+            ),
+            ListTile(
+              leading: const Icon(Icons.link), 
+              title: const Text('Copy Link'), 
+              onTap: () { 
+                Navigator.pop(context); 
+                Clipboard.setData(ClipboardData(text: widget.post.imageUrls[0]));
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied to clipboard!')));
+              }
+            ),
+            ListTile(
+              leading: const Icon(Icons.share_outlined), 
+              title: const Text('Share to...'), 
+              onTap: () {
+                Navigator.pop(context);
+                Share.share('Check out this post by ${widget.post.username}: ${widget.post.caption}');
+              }
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showReactionPopup() {
+    if (_reactionOverlay != null) return;
+    final overlay = Overlay.of(context);
+    final renderBox = _reactionButtonKey.currentContext!.findRenderObject() as RenderBox;
+    final position = renderBox.localToGlobal(Offset.zero);
+    _reactionOverlay = OverlayEntry(
+      builder: (_) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: _hideReactionPopup,
+        child: Stack(
+          children: [
+            Positioned(
+              top: position.dy - 70,
+              right: 20,
+              child: Material(
+                elevation: 8,
+                borderRadius: BorderRadius.circular(30),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(30)),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: reactionsList.map((r) => GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          if (widget.post.reaction == 'None') widget.post.likesCount++;
+                          widget.post.reaction = r['name']!;
+                        });
+                        _hideReactionPopup();
+                      },
+                      child: Padding(padding: const EdgeInsets.all(8.0), child: Text(r['icon']!, style: const TextStyle(fontSize: 25))),
+                    )).toList(),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    overlay.insert(_reactionOverlay!);
+  }
+
+  void _hideReactionPopup() {
+    _reactionOverlay?.remove();
+    _reactionOverlay = null;
   }
 
   @override
@@ -277,237 +361,90 @@ class _ExploreFeedItemState extends State<ExploreFeedItem> {
         PageView.builder(
           controller: _imagePageController,
           itemCount: widget.post.imageUrls.length,
-          onPageChanged: (index) {
-            setState(() {
-              _currentImageIndex = index;
-            });
-          },
-          itemBuilder: (context, i) {
-            return Image.network(widget.post.imageUrls[i], fit: BoxFit.cover);
-          },
+          itemBuilder: (context, i) => Image.network(widget.post.imageUrls[i], fit: BoxFit.cover),
         ),
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.black.withOpacity(0.3),
-                Colors.transparent,
-                Colors.black.withOpacity(0.3)
-              ],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-          ),
-        ),
-        
-        if (widget.post.imageUrls.length > 1) ...[
-          if (_currentImageIndex > 0)
-            Positioned(
-              left: 10,
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: IconButton(
-                  icon: const Icon(Icons.chevron_left, color: Colors.white70, size: 40),
-                  onPressed: () {
-                    _imagePageController.previousPage(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                    );
-                  },
-                ),
-              ),
-            ),
-          if (_currentImageIndex < widget.post.imageUrls.length - 1)
-            Positioned(
-              right: 10,
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: IconButton(
-                  icon: const Icon(Icons.chevron_right, color: Colors.white70, size: 40),
-                  onPressed: () {
-                    _imagePageController.nextPage(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                    );
-                  },
-                ),
-              ),
-            ),
-        ],
+        Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black.withOpacity(0.8), Colors.transparent], stops: const [0, 0.4]))),
 
-        if (widget.post.imageUrls.length > 1)
-          Positioned(
-            top: 60,
-            right: 20,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(10)),
-              child: Text('${_currentImageIndex + 1} / ${widget.post.imageUrls.length}', 
-                style: const TextStyle(color: Colors.white, fontSize: 12)),
-            ),
-          ),
         Positioned(
-          bottom: 20,
+          bottom: 40,
           left: 15,
-          right: 80,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  CircleAvatar(
-                    radius: 15,
-                    backgroundImage: NetworkImage(widget.post.userProfileImage),
-                  ),
+                  Text('@${widget.post.username}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                   const SizedBox(width: 10),
-                  Text(
-                    widget.post.username,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(width: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.white),
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                    child: const Text(
-                      'Follow',
-                      style: TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Text(widget.post.caption, style: const TextStyle(color: Colors.white)),
-            ],
-          ),
-        ),
-        Positioned(
-          bottom: 20,
-          right: 15,
-          child: Column(
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  GestureDetector(
-                    onLongPress: _toggleReactions,
-                    onTap: () {
-                      setState(() {
-                        if (widget.post.reaction == 'None') {
-                          widget.post.reaction = 'Love';
-                          widget.post.likesCount++;
-                        } else {
-                          widget.post.reaction = 'None';
-                          widget.post.likesCount--;
-                        }
-                      });
-                    },
-                    child: _getReactionIcon(),
-                  ),
-                  if (_showReactions)
-                    Positioned(
-                      right: 40,
-                      bottom: 0,
-                      child: Material(
-                        elevation: 5,
-                        borderRadius: BorderRadius.circular(30),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: reactionsList.map((r) => _ExploreReactionItem(
-                              icon: r['icon']!,
-                              name: r['name']!,
-                              onTap: () {
-                                setState(() {
-                                  if (widget.post.reaction == 'None') {
-                                    widget.post.likesCount++;
-                                  }
-                                  widget.post.reaction = r['name']!;
-                                });
-                                _toggleReactions();
-                              },
-                            )).toList(),
-                          ),
+                  if (widget.post.username != widget.currentUser)
+                    GestureDetector(
+                      onTap: () => setState(() => widget.post.isFollowing = !widget.post.isFollowing),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white),
+                          borderRadius: BorderRadius.circular(5),
+                          color: widget.post.isFollowing ? Colors.transparent : Colors.white.withOpacity(0.2),
                         ),
+                        child: Text(widget.post.isFollowing ? 'Following' : 'Follow', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
                       ),
                     ),
                 ],
               ),
-              Text(
-                widget.post.likesCount.toString(),
-                style: const TextStyle(color: Colors.white),
+              const SizedBox(height: 5),
+              SizedBox(width: MediaQuery.of(context).size.width * 0.7, child: Text(widget.post.caption, style: const TextStyle(color: Colors.white))),
+            ],
+          ),
+        ),
+
+        Positioned(
+          bottom: 40,
+          right: 15,
+          child: Column(
+            children: [
+              GestureDetector(
+                key: _reactionButtonKey,
+                onLongPress: _showReactionPopup,
+                onTap: () {
+                  setState(() {
+                    if (widget.post.reaction == 'None') { widget.post.reaction = 'Love'; widget.post.likesCount++; }
+                    else { widget.post.reaction = 'None'; widget.post.likesCount--; }
+                  });
+                },
+                child: widget.post.reaction == 'None'
+                    ? const Icon(Icons.favorite_border, color: Colors.white, size: 35)
+                    : (widget.post.reaction == 'Love'
+                    ? const Icon(Icons.favorite, color: Colors.red, size: 35)
+                    : Text(reactionsList.firstWhere((e) => e['name'] == widget.post.reaction)['icon']!, style: const TextStyle(fontSize: 30))),
               ),
+              Text('${widget.post.likesCount}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               const SizedBox(height: 20),
+              IconButton(icon: const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 32), onPressed: _showCommentsSheet),
+              const SizedBox(height: 10),
+              // SAVED BUTTON (Consistent with Home)
               IconButton(
-                icon: const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 30),
-                onPressed: _showCommentSheet,
+                icon: Icon(
+                  widget.post.isSaved ? Icons.bookmark : Icons.bookmark_border, 
+                  color: widget.post.isSaved ? Colors.yellow[700] : Colors.white, 
+                  size: 32
+                ),
+                onPressed: () {
+                  setState(() => widget.post.isSaved = !widget.post.isSaved);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(widget.post.isSaved ? 'Saved to bookmarks' : 'Removed from bookmarks'))
+                  );
+                },
               ),
-              Text(
-                widget.post.comments.length.toString(),
-                style: const TextStyle(color: Colors.white),
+              const SizedBox(height: 10),
+              IconButton(
+                icon: const Icon(Icons.send_outlined, color: Colors.white, size: 32), 
+                onPressed: () => Share.share('Check out this post by ${widget.post.username}: ${widget.post.caption}')
               ),
-              const SizedBox(height: 20),
-              const Icon(Icons.send_outlined, color: Colors.white, size: 30),
-              const SizedBox(height: 20),
-              const Icon(Icons.more_vert, color: Colors.white, size: 30),
+              const SizedBox(height: 10),
+              IconButton(icon: const Icon(Icons.more_vert, color: Colors.white, size: 32), onPressed: _showMoreOptions),
             ],
           ),
         ),
       ],
-    );
-  }
-}
-
-class _ExploreReactionItem extends StatefulWidget {
-  final String icon;
-  final String name;
-  final VoidCallback onTap;
-
-  const _ExploreReactionItem({
-    required this.icon,
-    required this.name,
-    required this.onTap,
-  });
-
-  @override
-  State<_ExploreReactionItem> createState() => _ExploreReactionItemState();
-}
-
-class _ExploreReactionItemState extends State<_ExploreReactionItem> {
-  bool _isHovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: InkWell(
-        onTap: widget.onTap,
-        child: AnimatedScale(
-          duration: const Duration(milliseconds: 200),
-          scale: _isHovered ? 1.3 : 1.0,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(widget.icon, style: const TextStyle(fontSize: 24)),
-                if (_isHovered)
-                  Text(widget.name, style: const TextStyle(fontSize: 10, color: Colors.black)),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

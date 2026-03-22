@@ -36,8 +36,8 @@ class _StoryCircleState extends State<StoryCircle> {
                 padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: widget.isMe 
-                    ? null 
+                  gradient: widget.isMe
+                    ? null
                     : const LinearGradient(
                         colors: [
                           Color(0xFFFBAA47),
