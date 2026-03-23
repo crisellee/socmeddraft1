@@ -30,7 +30,11 @@ class _SearchScreenState extends State<SearchScreen> {
           .where('username', isLessThanOrEqualTo: '${query.toLowerCase()}\uf8ff')
           .get();
       setState(() {
-        _searchResults = results.docs.map((doc) => doc.data()).toList();
+        _searchResults = results.docs.map((doc) {
+          final data = doc.data();
+          data['uid'] = doc.id; // Siguraduhin na may UID galing sa Document ID
+          return data;
+        }).toList();
         _isLoading = false;
       });
     } catch (e) {
@@ -66,7 +70,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 child: TextField(
                   controller: _searchController,
                   onChanged: _searchUsers,
-                  decoration: InputDecoration(hintText: 'Search', prefixIcon: const Icon(Icons.search), border: InputBorder.none),
+                  decoration: const InputDecoration(hintText: 'Search', prefixIcon: Icon(Icons.search), border: InputBorder.none, contentPadding: EdgeInsets.symmetric(vertical: 9)),
                 ),
               ),
             ),
@@ -113,49 +117,59 @@ class _UserProfileViewState extends State<UserProfileView> {
   void _checkStatus() async {
     if (currentUser == null) return;
     
-    // Check if already following
-    final followDoc = await FirebaseFirestore.instance
-        .collection('users').doc(currentUser!.uid)
-        .collection('following').doc(widget.userData['uid']).get();
-    
-    // Check if request is pending
-    final requestDoc = await FirebaseFirestore.instance
-        .collection('users').doc(widget.userData['uid'])
-        .collection('notifications')
-        .where('fromId', isEqualTo: currentUser!.uid)
-        .where('type', isEqualTo: 'follow_request')
-        .get();
+    try {
+      // Check if already following
+      final followDoc = await FirebaseFirestore.instance
+          .collection('users').doc(currentUser!.uid)
+          .collection('following').doc(widget.userData['uid']).get();
+      
+      // Check if request is pending
+      final requestDoc = await FirebaseFirestore.instance
+          .collection('users').doc(widget.userData['uid'])
+          .collection('notifications')
+          .where('fromId', isEqualTo: currentUser!.uid)
+          .where('type', isEqualTo: 'follow_request')
+          .get();
 
-    if (mounted) {
-      setState(() {
-        _isFollowing = followDoc.exists;
-        _hasSentRequest = requestDoc.docs.isNotEmpty;
-      });
+      if (mounted) {
+        setState(() {
+          _isFollowing = followDoc.exists;
+          _hasSentRequest = requestDoc.docs.isNotEmpty;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error checking follow status: $e");
     }
   }
 
   Future<void> _handleFollowClick() async {
     if (currentUser == null || _isFollowing || _hasSentRequest) return;
 
-    // 1. Get Current User Data for Notification (Sigurado na may pangalan)
-    final meDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser!.uid).get();
-    final myData = meDoc.data() ?? {};
+    try {
+      // 1. Get Current User Data for Notification
+      final meDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser!.uid).get();
+      final myData = meDoc.data() ?? {};
 
-    // 2. Send Follow Request Notification
-    await FirebaseFirestore.instance
-        .collection('users').doc(widget.userData['uid'])
-        .collection('notifications').add({
-      'type': 'follow_request',
-      'fromId': currentUser!.uid,
-      'fromName': myData['fullName'] ?? 'User',
-      'fromUsername': myData['username'] ?? 'user',
-      'fromImage': myData['profileImageUrl'] ?? 'https://i.pravatar.cc/150',
-      'timestamp': FieldValue.serverTimestamp(),
-      'message': 'wants to follow you.',
-      'status': 'pending',
-    });
+      // 2. Send Follow Request Notification
+      await FirebaseFirestore.instance
+          .collection('users').doc(widget.userData['uid'])
+          .collection('notifications').add({
+        'type': 'follow_request',
+        'fromId': currentUser!.uid,
+        'fromName': myData['fullName'] ?? currentUser!.displayName ?? 'User',
+        'fromUsername': myData['username'] ?? 'user',
+        'fromImage': myData['profileImageUrl'] ?? currentUser!.photoURL ?? 'https://i.pravatar.cc/150',
+        'timestamp': FieldValue.serverTimestamp(),
+        'message': 'wants to follow you.',
+        'status': 'pending',
+      });
 
-    setState(() => _hasSentRequest = true);
+      setState(() => _hasSentRequest = true);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Follow request sent!')));
+    } catch (e) {
+      debugPrint("Error sending follow request: $e");
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to send request.')));
+    }
   }
 
   @override
@@ -167,19 +181,23 @@ class _UserProfileViewState extends State<UserProfileView> {
         stream: FirebaseFirestore.instance
             .collection('posts')
             .where('username', isEqualTo: widget.userData['username'])
-            .orderBy('timestamp', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
           List<Post> userPosts = [];
           if (snapshot.hasData) {
-            userPosts = snapshot.data!.docs.map((doc) => Post(
-              id: doc.id,
-              username: doc['username'],
-              userProfileImage: doc['userProfileImage'],
-              postImageUrls: List<String>.from(doc['postImageUrls'] ?? []),
-              caption: doc['caption'] ?? '',
-              timeAgo: 'Now',
-            )).toList();
+            userPosts = snapshot.data!.docs.map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return Post(
+                id: doc.id,
+                username: data['username'] ?? '',
+                userProfileImage: data['userProfileImage'] ?? '',
+                location: data['location'] ?? '',
+                postImageUrls: List<String>.from(data['postImageUrls'] ?? []),
+                caption: data['caption'] ?? '',
+                timeAgo: 'Now',
+              );
+            }).toList();
+            userPosts.sort((a, b) => b.id.compareTo(a.id)); 
           }
 
           final imagesOnly = userPosts.where((p) => p.postImageUrls.isNotEmpty).toList();
@@ -222,7 +240,7 @@ class _UserProfileViewState extends State<UserProfileView> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => ChatDetailScreen(contactName: widget.userData['username'], contactImage: widget.userData['profileImageUrl'], contactUid: widget.userData['uid']))),
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => ChatDetailScreen(contactName: widget.userData['username'], contactImage: widget.userData['profileImageUrl'] ?? 'https://i.pravatar.cc/150', contactUid: widget.userData['uid']))),
                         child: const Text('Message'),
                       ),
                     ),
@@ -239,15 +257,23 @@ class _UserProfileViewState extends State<UserProfileView> {
                       Expanded(
                         child: TabBarView(
                           children: [
-                            GridView.builder(
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 1, mainAxisSpacing: 1),
-                              itemCount: imagesOnly.length,
-                              itemBuilder: (context, i) => Image.network(imagesOnly[i].postImageUrls[0], fit: BoxFit.cover),
-                            ),
-                            ListView.builder(
-                              itemCount: threadsOnly.length,
-                              itemBuilder: (context, i) => ListTile(title: Text(threadsOnly[i].caption), subtitle: const Text('Thread')),
-                            ),
+                            imagesOnly.isEmpty 
+                              ? const Center(child: Text("No photos yet"))
+                              : GridView.builder(
+                                  padding: const EdgeInsets.all(1),
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 1, mainAxisSpacing: 1),
+                                  itemCount: imagesOnly.length,
+                                  itemBuilder: (context, i) => Image.network(imagesOnly[i].postImageUrls[0], fit: BoxFit.cover),
+                                ),
+                            threadsOnly.isEmpty
+                              ? const Center(child: Text("No threads yet"))
+                              : ListView.builder(
+                                  itemCount: threadsOnly.length,
+                                  itemBuilder: (context, i) => ListTile(
+                                    title: Text(threadsOnly[i].caption),
+                                    subtitle: const Text('Thread'),
+                                  ),
+                                ),
                           ],
                         ),
                       ),

@@ -41,6 +41,27 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isRecording = false;
   bool _isAiTyping = false;
+  String _currentUserName = 'User';
+  String _currentUserImage = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCurrentUserData();
+  }
+
+  Future<void> _fetchCurrentUserData() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      final doc = await _firestore.collection('users').doc(user.uid).get();
+      if (doc.exists && mounted) {
+        setState(() {
+          _currentUserName = doc.data()?['fullName'] ?? doc.data()?['username'] ?? user.displayName ?? 'User';
+          _currentUserImage = doc.data()?['profileImageUrl'] ?? user.photoURL ?? '';
+        });
+      }
+    }
+  }
 
   String get _effectiveChatId {
     if (widget.chatId != null) return widget.chatId!;
@@ -55,7 +76,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
     final messageData = {
       'senderId': user.uid,
-      'senderName': user.displayName ?? 'User',
+      'senderName': _currentUserName,
       'text': text,
       'type': type ?? 'text',
       'timestamp': FieldValue.serverTimestamp(),
@@ -72,11 +93,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       'lastTimestamp': FieldValue.serverTimestamp(),
       'participants': [user.uid, widget.contactUid],
       'names': {
-        user.uid: user.displayName ?? 'User',
+        user.uid: _currentUserName,
         widget.contactUid: widget.contactName,
       },
       'images': {
-        user.uid: user.photoURL ?? '',
+        user.uid: _currentUserImage,
         widget.contactUid: widget.contactImage,
       }
     }, SetOptions(merge: true));
@@ -103,6 +124,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           .collection('messages')
           .add({
         'senderId': 'ai_buddy',
+        'senderName': 'AI TALK BUDDY',
         'text': response,
         'type': 'text',
         'timestamp': FieldValue.serverTimestamp(),
@@ -259,7 +281,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                           color: isMe ? _bubbleColor : (data['senderId'] == 'ai_buddy' ? Colors.purple.withOpacity(0.1) : (isDark ? Colors.grey[800] : Colors.grey[200])),
                           borderRadius: BorderRadius.circular(18),
                         ),
-                        child: Text(data['text'] ?? "", style: TextStyle(color: isMe ? Colors.white : (isDark ? Colors.white : Colors.black))),
+                        child: Column(
+                          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                          children: [
+                            if (!isMe) Text(data['senderName'] ?? 'User', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                            Text(data['text'] ?? "", style: TextStyle(color: isMe ? Colors.white : (isDark ? Colors.white : Colors.black))),
+                          ],
+                        ),
                       ),
                     );
                   },
