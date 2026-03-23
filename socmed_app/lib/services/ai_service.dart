@@ -3,7 +3,7 @@ import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter/foundation.dart';
 
 class AiService {
-  static const String _apiKey = "";
+  static const String _apiKey = "AIzaSyC3XxD8fHly8TFvLiQgfA4LpmQRgYVra8A";
 
   final GenerativeModel _model;
   ChatSession? _chatSession;

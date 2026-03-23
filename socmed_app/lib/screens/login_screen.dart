@@ -52,7 +52,7 @@ class _LoginScreenState extends State<LoginScreen> {
             'email': user.email,
             'username': user.displayName?.toLowerCase().replaceAll(' ', '_') ?? 'user',
             'fullName': user.displayName ?? '',
-            'bio': 'New to Instagram Clone ✨',
+            'bio': 'New to SnapTalk Buddy ✨',
             'profileImageUrl': user.photoURL ?? 'https://i.pravatar.cc/150?u=${user.uid}',
             'followers': [],
             'following': [],
@@ -105,7 +105,7 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text('Instagram', style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, fontFamily: 'Billabong')),
+                  const Text('SnapTalk Buddy', style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, fontFamily: 'Billabong')),
                   const SizedBox(height: 40),
 
                   // EMAIL FIELD

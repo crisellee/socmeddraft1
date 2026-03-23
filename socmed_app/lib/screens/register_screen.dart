@@ -74,7 +74,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'email': email,
         'username': username,
         'fullName': fullName,
-        'bio': '',
+        'bio': 'New to SnapTalk Buddy ✨',
         'profileImageUrl': 'https://i.pravatar.cc/150?u=${userCredential.user!.uid}',
         'followers': [],
         'following': [],
@@ -116,7 +116,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Text(
-                  'Instagram',
+                  'SnapTalk Buddy',
                   style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 40),

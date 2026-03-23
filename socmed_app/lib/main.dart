@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 
 // MODELS
@@ -23,22 +24,41 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(const InstagramClone());
+  runApp(const SnaptalkClone());
 }
 
-class InstagramClone extends StatelessWidget {
-  const InstagramClone({super.key});
+class SnaptalkClone extends StatefulWidget {
+  const SnaptalkClone({super.key});
+
+  @override
+  State<SnaptalkClone> createState() => _SnaptalkCloneState();
+}
+
+class _SnaptalkCloneState extends State<SnaptalkClone> {
+  ThemeMode _themeMode = ThemeMode.light;
+
+  void toggleTheme(bool isDark) {
+    setState(() {
+      _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Instagram',
+      title: 'Snaptalk Buddy',
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.white),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.white, brightness: Brightness.light),
         scaffoldBackgroundColor: Colors.white,
       ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.black, brightness: Brightness.dark),
+        scaffoldBackgroundColor: Colors.black,
+      ),
+      themeMode: _themeMode,
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
@@ -46,7 +66,7 @@ class InstagramClone extends StatelessWidget {
             return const Scaffold(body: Center(child: CircularProgressIndicator()));
           }
           if (snapshot.hasData) {
-            return const MainScreen();
+            return MainScreen(onThemeChanged: toggleTheme, currentThemeMode: _themeMode);
           }
           return const LoginScreen();
         },
@@ -56,7 +76,10 @@ class InstagramClone extends StatelessWidget {
 }
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  final Function(bool) onThemeChanged;
+  final ThemeMode currentThemeMode;
+
+  const MainScreen({super.key, required this.onThemeChanged, required this.currentThemeMode});
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -65,6 +88,8 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
   bool _isSidebarHovered = false;
+  String _currentUserName = 'user';
+  String _currentUserProfileImage = 'https://i.pravatar.cc/150?img=11';
 
   final List<Post> _posts = [
     Post(
@@ -90,10 +115,35 @@ class _MainScreenState extends State<MainScreen> {
   ];
 
   final List<Map<String, String>> _storyData = [
+    {'username': 'Your Story', 'imageUrl': 'https://i.pravatar.cc/150?img=11'},
     {'username': 'blythe', 'imageUrl': 'https://i.pravatar.cc/150?img=11'},
     {'username': 'yayang_', 'imageUrl': 'https://i.pravatar.cc/150?img=12'},
     {'username': 'selena_g', 'imageUrl': 'https://i.pravatar.cc/150?img=13'},
+    {'username': 'joven', 'imageUrl': 'https://i.pravatar.cc/150?img=14'},
+    {'username': 'shaina', 'imageUrl': 'https://i.pravatar.cc/150?img=15'},
+    {'username': 'kaila', 'imageUrl': 'https://i.pravatar.cc/150?img=16'},
+    {'username': 'supremo_dp', 'imageUrl': 'https://i.pravatar.cc/150?img=17'},
+    {'username': 'rei', 'imageUrl': 'https://i.pravatar.cc/150?img=18'},
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCurrentUserData();
+  }
+
+  Future<void> _fetchCurrentUserData() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      if (userDoc.exists && mounted) {
+        setState(() {
+          _currentUserName = userDoc.data()?['username'] ?? 'user';
+          _currentUserProfileImage = userDoc.data()?['profileImageUrl'] ?? 'https://i.pravatar.cc/150?u=${user.uid}';
+        });
+      }
+    }
+  }
 
   void _handleReact(int index, String reaction) {
     setState(() {
@@ -106,10 +156,44 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
+  void _handleSave(int index) async {
+    final post = _posts[index];
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    setState(() {
+      post.isSaved = !post.isSaved;
+    });
+
+    try {
+      final savedRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('saved_posts')
+          .doc(post.id);
+
+      if (post.isSaved) {
+        await savedRef.set({
+          'id': post.id,
+          'username': post.username,
+          'userProfileImage': post.userProfileImage,
+          'caption': post.caption,
+          'postImageUrls': post.postImageUrls,
+          'timestamp': FieldValue.serverTimestamp(),
+          'type': post.postImageUrls.isEmpty ? 'thread' : 'post',
+        });
+      } else {
+        await savedRef.delete();
+      }
+    } catch (e) {
+      debugPrint("Error saving post: $e");
+    }
+  }
+
   void _showMoreMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).cardColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -126,6 +210,15 @@ class _MainScreenState extends State<MainScreen> {
                 color: Colors.grey[300],
                 borderRadius: BorderRadius.circular(10),
               ),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.dark_mode_outlined),
+              title: const Text('Dark Mode'),
+              value: widget.currentThemeMode == ThemeMode.dark,
+              onChanged: (bool value) {
+                widget.onThemeChanged(value);
+                Navigator.pop(context);
+              },
             ),
             ListTile(
               leading: const Icon(Icons.settings_outlined),
@@ -177,7 +270,7 @@ class _MainScreenState extends State<MainScreen> {
         },
         onSave: (filteredIndex) {
           final post = _posts.where((p) => p.postImageUrls.isNotEmpty).toList()[filteredIndex];
-          setState(() => post.isSaved = !post.isSaved);
+          _handleSave(_posts.indexOf(post));
         },
         onDirectMessage: () => setState(() => _selectedIndex = 5),
       ),
@@ -186,8 +279,8 @@ class _MainScreenState extends State<MainScreen> {
           onPost: (cap, urls, loc) => setState(() {
             _posts.insert(0, Post(
               id: DateTime.now().toString(), 
-              username: 'kriselz_', 
-              userProfileImage: 'https://i.pravatar.cc/150?img=11', 
+              username: _currentUserName, 
+              userProfileImage: _currentUserProfileImage,
               postImageUrls: urls, 
               caption: cap, 
               location: loc, 
@@ -199,7 +292,7 @@ class _MainScreenState extends State<MainScreen> {
               _selectedIndex = 0; 
             }
           }),
-          onAddStory: (url) => setState(() => _storyData.insert(0, {'username': 'Your Story', 'imageUrl': url})),
+          onAddStory: (url) => setState(() => _storyData.insert(1, {'username': 'Your Story', 'imageUrl': url})),
           onClose: () => setState(() => _selectedIndex = 0)),
       const ReelsScreen(),
       ProfileScreen(
@@ -207,7 +300,7 @@ class _MainScreenState extends State<MainScreen> {
         onDeletePost: (id) => setState(() => _posts.removeWhere((p) => p.id == id)),
         onReact: _handleReact,
         onComment: (i, c) => setState(() => _posts[i].comments.add(c)),
-        onSave: (i) => setState(() => _posts[i].isSaved = !_posts[i].isSaved),
+        onSave: (i) => _handleSave(i),
       ),
       MessagesScreen(stories: _storyData),
       NotificationsScreen(),
@@ -222,7 +315,7 @@ class _MainScreenState extends State<MainScreen> {
           Expanded(
             child: Container(
               alignment: Alignment.topCenter,
-              color: Colors.white,
+              color: Theme.of(context).scaffoldBackgroundColor,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -250,13 +343,14 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildSidebar(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return MouseRegion(
       onEnter: (_) => setState(() => _isSidebarHovered = true),
       onExit: (_) => setState(() => _isSidebarHovered = false),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         width: _isSidebarHovered ? 240 : 80,
-        decoration: BoxDecoration(border: Border(right: BorderSide(color: Colors.grey[200]!))),
+        decoration: BoxDecoration(border: Border(right: BorderSide(color: Theme.of(context).dividerColor))),
         child: Column(
           children: [
             const SizedBox(height: 20),
@@ -266,8 +360,8 @@ class _MainScreenState extends State<MainScreen> {
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 200),
                   child: _isSidebarHovered
-                      ? const Text('Instagram', key: ValueKey('text'), style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold))
-                      : const Icon(Icons.camera_alt_outlined, key: ValueKey('icon'), size: 30),
+                      ? Text('Snaptalk', key: const ValueKey('text'), style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: colorScheme.onSurface))
+                      : Icon(Icons.camera_alt_outlined, key: const ValueKey('icon'), size: 30, color: colorScheme.onSurface),
                 ),
               ),
             ),
@@ -305,12 +399,16 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildBottomNav() {
+    final colorScheme = Theme.of(context).colorScheme;
     return BottomNavigationBar(
       currentIndex: _selectedIndex > 4 ? (_selectedIndex == 8 ? 4 : 0) : _selectedIndex,
       onTap: (index) => setState(() => _selectedIndex = index),
       type: BottomNavigationBarType.fixed,
-      selectedItemColor: Colors.black,
+      selectedItemColor: colorScheme.onSurface,
+      unselectedItemColor: colorScheme.onSurface.withOpacity(0.6),
       showSelectedLabels: false,
+      showUnselectedLabels: false,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       items: const [
         BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
         BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), label: 'Explore'),
@@ -372,6 +470,8 @@ class _SidebarItemState extends State<SidebarItem> {
   @override
   Widget build(BuildContext context) {
     bool isSelected = widget.selectedIndex == widget.index;
+    final colorScheme = Theme.of(context).colorScheme;
+
     return MouseRegion(
       onEnter: (_) => setState(() => _isItemHovered = true),
       onExit: (_) => setState(() => _isItemHovered = false),
@@ -383,24 +483,24 @@ class _SidebarItemState extends State<SidebarItem> {
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
           margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.grey[100] : (_isItemHovered ? Colors.grey[50] : Colors.transparent),
+            color: isSelected ? colorScheme.surfaceVariant : (_isItemHovered ? colorScheme.surfaceVariant.withOpacity(0.5) : Colors.transparent),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
             mainAxisAlignment: widget.isSidebarHovered ? MainAxisAlignment.start : MainAxisAlignment.center,
             children: [
               widget.label == 'Profile'
-                  ? CircleAvatar(radius: 14, backgroundImage: const NetworkImage('https://i.pravatar.cc/150?img=11'), child: isSelected ? Container(decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.black, width: 2))) : null)
+                  ? CircleAvatar(radius: 14, backgroundImage: const NetworkImage('https://i.pravatar.cc/150?img=11'), child: isSelected ? Container(decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: colorScheme.onSurface, width: 2))) : null)
                   : (widget.badge != null
-                  ? Badge(label: Text(widget.badge!), child: Icon(isSelected ? widget.activeIcon : widget.inactiveIcon, size: 28))
-                  : Icon(isSelected ? widget.activeIcon : widget.inactiveIcon, size: 28)),
+                  ? Badge(label: Text(widget.badge!), child: Icon(isSelected ? widget.activeIcon : widget.inactiveIcon, size: 28, color: colorScheme.onSurface))
+                  : Icon(isSelected ? widget.activeIcon : widget.inactiveIcon, size: 28, color: colorScheme.onSurface)),
               if (widget.isSidebarHovered)
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.only(left: 16),
                     child: Text(
                       widget.label,
-                      style: TextStyle(fontSize: 16, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal),
+                      style: TextStyle(fontSize: 16, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, color: colorScheme.onSurface),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),

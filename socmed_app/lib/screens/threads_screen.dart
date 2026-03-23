@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post.dart';
 
 class ThreadsScreen extends StatefulWidget {
@@ -111,6 +113,45 @@ class _ThreadsScreenState extends State<ThreadsScreen> {
     
     final reactData = reactionsList.firstWhere((r) => r['name'] == reaction, orElse: () => reactionsList[0]);
     return Text(reactData['icon']!, style: const TextStyle(fontSize: 18));
+  }
+
+  void _toggleSaveThread(Post thread) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please log in to save threads.')));
+      return;
+    }
+
+    setState(() {
+      thread.isSaved = !thread.isSaved;
+    });
+
+    try {
+      final savedRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('saved_threads')
+          .doc(thread.id);
+
+      if (thread.isSaved) {
+        await savedRef.set({
+          'id': thread.id,
+          'username': thread.username,
+          'userProfileImage': thread.userProfileImage,
+          'caption': thread.caption,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved to bookmarks')));
+      } else {
+        await savedRef.delete();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Removed from bookmarks')));
+      }
+    } catch (e) {
+      setState(() {
+        thread.isSaved = !thread.isSaved;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
   }
 
   void _showCommentSheet(Post thread) {
@@ -305,10 +346,7 @@ class _ThreadsScreenState extends State<ThreadsScreen> {
                                         size: 22,
                                         color: thread.isSaved ? Colors.yellow[700] : Colors.black,
                                       ),
-                                      onPressed: () {
-                                        setState(() => thread.isSaved = !thread.isSaved);
-                                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(thread.isSaved ? 'Saved to bookmarks' : 'Removed from bookmarks')));
-                                      },
+                                      onPressed: () => _toggleSaveThread(thread),
                                       constraints: const BoxConstraints(), padding: EdgeInsets.zero,
                                     ),
                                     const SizedBox(width: 25),

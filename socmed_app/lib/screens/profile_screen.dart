@@ -105,7 +105,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showProfilePostOptions(Post post) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).cardColor,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 20),
@@ -160,12 +160,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     final userPosts = widget.allPosts.where((p) => p.username == _userName).toList();
+    final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(_userName, style: const TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white,
+        backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
       ),
       body: SingleChildScrollView(
@@ -204,16 +205,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       Expanded(
                         child: OutlinedButton(
                           onPressed: _editProfile,
-                          style: OutlinedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                          child: const Text('Edit Profile', style: TextStyle(color: Colors.black)),
+                          style: OutlinedButton.styleFrom(
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            side: BorderSide(color: theme.dividerColor),
+                          ),
+                          child: Text('Edit Profile', style: TextStyle(color: theme.colorScheme.onSurface)),
                         ),
                       ),
                       const SizedBox(width: 5),
                       Expanded(
                         child: OutlinedButton(
                           onPressed: () {},
-                          style: OutlinedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                          child: const Text('Share Profile', style: TextStyle(color: Colors.black)),
+                          style: OutlinedButton.styleFrom(
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            side: BorderSide(color: theme.dividerColor),
+                          ),
+                          child: Text('Share Profile', style: TextStyle(color: theme.colorScheme.onSurface)),
                         ),
                       ),
                     ],
@@ -222,7 +229,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            const Divider(height: 1),
+            Divider(height: 1, color: theme.dividerColor),
             // Tab Icons
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -242,7 +249,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildTabIcon(IconData icon, int index) {
     return IconButton(
-      icon: Icon(icon, color: _selectedTabIndex == index ? Colors.black : Colors.grey),
+      icon: Icon(icon, color: _selectedTabIndex == index ? Theme.of(context).colorScheme.onSurface : Colors.grey),
       onPressed: () => setState(() => _selectedTabIndex = index),
     );
   }
@@ -294,11 +301,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => Scaffold(
-          backgroundColor: Colors.white,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           appBar: AppBar(
             title: Text(post.postImageUrls.isEmpty ? 'Thread' : 'Post'), 
-            backgroundColor: Colors.white, 
-            foregroundColor: Colors.black,
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor, 
+            foregroundColor: Theme.of(context).colorScheme.onSurface,
             elevation: 0.5
           ),
           body: ListView(
@@ -309,10 +316,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onComment: (comment) => widget.onComment(widget.allPosts.indexOf(post), comment),
                 onSave: () => widget.onSave(widget.allPosts.indexOf(post)),
                 onMoreTap: () => _showProfilePostOptions(post),
-                onDelete: post.username == _userName ? () {
-                  widget.onDeletePost(post.id);
-                  Navigator.pop(context);
-                } : null,
               ),
             ],
           ),
