@@ -20,9 +20,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     // 1. Add to followers/following
     final batch = FirebaseFirestore.instance.batch();
     
-    // Current user follows back (optional, but usually "Accept" means both follow each other in some apps, 
-    // or just "Allow" them to follow you). Let's make it a mutual follow.
-    
     batch.set(FirebaseFirestore.instance.collection('users').doc(currentUser!.uid).collection('followers').doc(fromId), {'timestamp': FieldValue.serverTimestamp()});
     batch.set(FirebaseFirestore.instance.collection('users').doc(fromId).collection('following').doc(currentUser!.uid), {'timestamp': FieldValue.serverTimestamp()});
 
@@ -30,7 +27,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     batch.update(FirebaseFirestore.instance.collection('users').doc(currentUser!.uid).collection('notifications').doc(notificationId), {
       'status': 'accepted',
       'message': 'is now following you.',
-      'type': 'follow', // Change type so it looks like a normal follow now
+      'type': 'follow', 
     });
 
     await batch.commit();
@@ -46,7 +43,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(title: const Text('Notifications', style: TextStyle(fontWeight: FontWeight.bold))),
+      appBar: AppBar(
+        title: const Text('Notifications', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
+        backgroundColor: Colors.white,
+        elevation: 0,
+      ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('users').doc(currentUser!.uid)
@@ -54,8 +55,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             .orderBy('timestamp', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          final docs = snapshot.data!.docs;
+          if (snapshot.hasError) {
+            return Center(child: Text("Error: ${snapshot.error}"));
+          }
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          
+          final docs = snapshot.data?.docs ?? [];
+          if (docs.isEmpty) {
+            return const Center(child: Text("No notifications yet", style: TextStyle(color: Colors.grey)));
+          }
 
           return ListView.builder(
             itemCount: docs.length,
@@ -63,15 +73,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               final docId = docs[index].id;
               final data = docs[index].data() as Map<String, dynamic>;
               final String type = data['type'] ?? '';
+              final String fromName = data['fromName']?.toString() ?? 'User';
+              final String message = data['message']?.toString() ?? '';
+              final String fromImage = data['fromImage']?.toString() ?? 'https://i.pravatar.cc/150';
               
               return ListTile(
-                leading: CircleAvatar(backgroundImage: NetworkImage(data['fromImage'] ?? 'https://i.pravatar.cc/150')),
+                leading: CircleAvatar(backgroundImage: NetworkImage(fromImage)),
                 title: RichText(
                   text: TextSpan(
                     style: const TextStyle(color: Colors.black, fontSize: 14),
                     children: [
-                      TextSpan(text: data['fromName'] ?? 'User', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      TextSpan(text: ' ${data['message']}'),
+                      TextSpan(text: fromName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      const TextSpan(text: ' '),
+                      TextSpan(text: message),
                     ],
                   ),
                 ),
@@ -92,7 +106,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         ),
                       ],
                     )
-                  : IconButton(icon: const Icon(Icons.close, size: 18, color: Colors.grey), onPressed: () => _deleteNotification(docId)),
+                  : IconButton(
+                      icon: const Icon(Icons.close, size: 18, color: Colors.grey), 
+                      onPressed: () => _deleteNotification(docId)
+                    ),
               );
             },
           );

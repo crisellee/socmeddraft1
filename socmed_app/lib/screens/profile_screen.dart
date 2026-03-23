@@ -30,10 +30,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final User? currentUser = FirebaseAuth.instance.currentUser;
   int _selectedTabIndex = 0; // 0: Posts, 1: Reels, 2: Threads, 3: Saved
 
-  String _userName = 'kriselz_';
-  String _fullName = 'Krisel';
-  String _bio = 'Digital Creator\nLiving my best life ✨';
+  String _userName = 'user';
+  String _fullName = 'User';
+  String _bio = '';
   String _profileImageUrl = 'https://i.pravatar.cc/150?img=11';
+  int _followersCount = 0;
+  int _followingCount = 0;
   bool _isLoading = true;
 
   @override
@@ -46,13 +48,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (currentUser == null) return;
     
     try {
+      // 1. Fetch Basic Info
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser!.uid).get();
-      if (userDoc.exists && mounted) {
+      
+      // 2. Fetch Followers Count
+      final followersSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser!.uid)
+          .collection('followers')
+          .get();
+      
+      // 3. Fetch Following Count
+      final followingSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser!.uid)
+          .collection('following')
+          .get();
+
+      if (mounted) {
         setState(() {
-          _userName = userDoc.data()?['username'] ?? 'user';
-          _fullName = userDoc.data()?['fullName'] ?? '';
-          _bio = userDoc.data()?['bio'] ?? '';
-          _profileImageUrl = userDoc.data()?['profileImageUrl'] ?? 'https://i.pravatar.cc/150?u=${currentUser!.uid}';
+          if (userDoc.exists) {
+            _userName = userDoc.data()?['username'] ?? 'user';
+            _fullName = userDoc.data()?['fullName'] ?? '';
+            _bio = userDoc.data()?['bio'] ?? '';
+            _profileImageUrl = userDoc.data()?['profileImageUrl'] ?? 'https://i.pravatar.cc/150?u=${currentUser!.uid}';
+          }
+          _followersCount = followersSnapshot.docs.length;
+          _followingCount = followingSnapshot.docs.length;
           _isLoading = false;
         });
       }
@@ -169,79 +191,83 @@ class _ProfileScreenState extends State<ProfileScreen> {
         backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Header: Stats & Avatar
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  CircleAvatar(radius: 40, backgroundImage: NetworkImage(_profileImageUrl)),
-                  Expanded(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      body: RefreshIndicator(
+        onRefresh: _fetchUserData,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            children: [
+              // Header: Stats & Avatar
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    CircleAvatar(radius: 40, backgroundImage: NetworkImage(_profileImageUrl)),
+                    Expanded(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          _buildStatColumn(userPosts.length.toString(), 'Posts'),
+                          _buildStatColumn(_followersCount.toString(), 'Followers'),
+                          _buildStatColumn(_followingCount.toString(), 'Following'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Bio & Action Buttons
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_fullName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    Text(_bio),
+                    const SizedBox(height: 15),
+                    Row(
                       children: [
-                        _buildStatColumn(userPosts.length.toString(), 'Posts'),
-                        _buildStatColumn('1.2k', 'Followers'),
-                        _buildStatColumn('350', 'Following'),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _editProfile,
+                            style: OutlinedButton.styleFrom(
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              side: BorderSide(color: theme.dividerColor),
+                            ),
+                            child: Text('Edit Profile', style: TextStyle(color: theme.colorScheme.onSurface)),
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {},
+                            style: OutlinedButton.styleFrom(
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              side: BorderSide(color: theme.dividerColor),
+                            ),
+                            child: Text('Share Profile', style: TextStyle(color: theme.colorScheme.onSurface)),
+                          ),
+                        ),
                       ],
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            // Bio & Action Buttons
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 20),
+              Divider(height: 1, color: theme.dividerColor),
+              // Tab Icons
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  Text(_fullName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  Text(_bio),
-                  const SizedBox(height: 15),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: _editProfile,
-                          style: OutlinedButton.styleFrom(
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            side: BorderSide(color: theme.dividerColor),
-                          ),
-                          child: Text('Edit Profile', style: TextStyle(color: theme.colorScheme.onSurface)),
-                        ),
-                      ),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () {},
-                          style: OutlinedButton.styleFrom(
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            side: BorderSide(color: theme.dividerColor),
-                          ),
-                          child: Text('Share Profile', style: TextStyle(color: theme.colorScheme.onSurface)),
-                        ),
-                      ),
-                    ],
-                  ),
+                  _buildTabIcon(Icons.grid_on, 0),
+                  _buildTabIcon(Icons.movie_outlined, 1),
+                  _buildTabIcon(Icons.alternate_email, 2),
+                  _buildTabIcon(Icons.bookmark_border, 3),
                 ],
               ),
-            ),
-            const SizedBox(height: 20),
-            Divider(height: 1, color: theme.dividerColor),
-            // Tab Icons
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildTabIcon(Icons.grid_on, 0),
-                _buildTabIcon(Icons.movie_outlined, 1),
-                _buildTabIcon(Icons.alternate_email, 2),
-                _buildTabIcon(Icons.bookmark_border, 3),
-              ],
-            ),
-            _buildTabContent(),
-          ],
+              _buildTabContent(),
+            ],
+          ),
         ),
       ),
     );
@@ -290,7 +316,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final post = currentList[index];
         return InkWell(
           onTap: () => _showPostDetail(post),
-          child: Image.network(post.postImageUrls[0], fit: BoxFit.cover),
+          child: post.postImageUrls.isNotEmpty 
+            ? Image.network(post.postImageUrls[0], fit: BoxFit.cover)
+            : Container(color: Colors.grey[200], child: const Icon(Icons.text_fields)),
         );
       },
     );

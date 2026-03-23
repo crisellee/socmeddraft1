@@ -115,8 +115,8 @@ class _MainScreenState extends State<MainScreen> {
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       if (userDoc.exists && mounted) {
         setState(() {
-          _currentUserName = userDoc.data()?['username'] ?? 'user';
-          _currentUserProfileImage = userDoc.data()?['profileImageUrl'] ?? 'https://i.pravatar.cc/150?u=${user.uid}';
+          _currentUserName = userDoc.data()?['username']?.toString() ?? 'user';
+          _currentUserProfileImage = userDoc.data()?['profileImageUrl']?.toString() ?? 'https://i.pravatar.cc/150?u=${user.uid}';
         });
       }
     }
@@ -126,6 +126,7 @@ class _MainScreenState extends State<MainScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
+    // 1. Save post
     await FirebaseFirestore.instance.collection('posts').add({
       'username': _currentUserName,
       'userProfileImage': _currentUserProfileImage,
@@ -136,7 +137,39 @@ class _MainScreenState extends State<MainScreen> {
       'likesCount': 0,
       'isSaved': false,
       'comments': [],
+      'reaction': 'None',
+      'userId': user.uid,
     });
+
+    // 2. Notify followers
+    try {
+      final followersSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('followers')
+          .get();
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (var doc in followersSnapshot.docs) {
+        final followerId = doc.id;
+        final notifRef = FirebaseFirestore.instance
+            .collection('users')
+            .doc(followerId)
+            .collection('notifications')
+            .doc();
+        batch.set(notifRef, {
+          'type': 'post',
+          'fromId': user.uid,
+          'fromName': _currentUserName,
+          'fromImage': _currentUserProfileImage,
+          'timestamp': FieldValue.serverTimestamp(),
+          'message': urls.isEmpty ? 'shared a new thread.' : 'shared a new post.',
+        });
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint("Error notifying followers: $e");
+    }
 
     setState(() {
       if (urls.isEmpty) {
@@ -145,6 +178,49 @@ class _MainScreenState extends State<MainScreen> {
         _selectedIndex = 0;
       }
     });
+  }
+
+  Future<void> _handleReaction(Post post, String reaction) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // 1. Update Post
+    await FirebaseFirestore.instance.collection('posts').doc(post.id).update({
+      'reaction': reaction,
+      'likesCount': reaction != 'None' ? post.likesCount + 1 : post.likesCount - (post.likesCount > 0 ? 1 : 0),
+    });
+
+    // 2. Notify Post Owner
+    if (reaction != 'None') {
+      try {
+        final postDoc = await FirebaseFirestore.instance.collection('posts').doc(post.id).get();
+        final postOwnerId = postDoc.data()?['userId']?.toString();
+
+        if (postOwnerId != null && postOwnerId != user.uid) {
+          String reactEmoji = '❤️';
+          if (reaction == 'Haha') reactEmoji = '😆';
+          if (reaction == 'Wow') reactEmoji = '😮';
+          if (reaction == 'Sad') reactEmoji = '😢';
+          if (reaction == 'Angry') reactEmoji = '😡';
+
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(postOwnerId)
+              .collection('notifications')
+              .add({
+            'type': 'reaction',
+            'fromId': user.uid,
+            'fromName': _currentUserName,
+            'fromImage': _currentUserProfileImage,
+            'timestamp': FieldValue.serverTimestamp(),
+            'message': 'reacted $reactEmoji to your post.',
+            'postId': post.id,
+          });
+        }
+      } catch (e) {
+        debugPrint("Error sending reaction notification: $e");
+      }
+    }
   }
 
   void _showMoreMenu(BuildContext context) {
@@ -221,14 +297,15 @@ class _MainScreenState extends State<MainScreen> {
             final data = doc.data() as Map<String, dynamic>;
             return Post(
               id: doc.id,
-              username: data['username'] ?? '',
-              userProfileImage: data['userProfileImage'] ?? '',
-              location: data['location'] ?? '',
+              username: data['username']?.toString() ?? '',
+              userProfileImage: data['userProfileImage']?.toString() ?? '',
+              location: data['location']?.toString() ?? '',
               postImageUrls: List<String>.from(data['postImageUrls'] ?? []),
-              caption: data['caption'] ?? '',
-              timeAgo: 'Just now', // You can add logic to format the timestamp
-              likesCount: data['likesCount'] ?? 0,
-              isSaved: data['isSaved'] ?? false,
+              caption: data['caption']?.toString() ?? '',
+              timeAgo: 'Just now', 
+              reaction: data['reaction']?.toString() ?? 'None',
+              likesCount: int.tryParse(data['likesCount']?.toString() ?? '0') ?? 0,
+              isSaved: data['isSaved'] == true,
               comments: List<String>.from(data['comments'] ?? []),
             );
           }).toList();
@@ -240,14 +317,12 @@ class _MainScreenState extends State<MainScreen> {
             stories: _storyData,
             onReact: (index, reaction) {
               final post = allPosts.where((p) => p.postImageUrls.isNotEmpty).toList()[index];
-              FirebaseFirestore.instance.collection('posts').doc(post.id).update({
-                'likesCount': reaction != 'None' ? post.likesCount + 1 : post.likesCount - (post.likesCount > 0 ? 1 : 0),
-              });
+              _handleReaction(post, reaction);
             },
             onComment: (index, comment) {
               final post = allPosts.where((p) => p.postImageUrls.isNotEmpty).toList()[index];
               FirebaseFirestore.instance.collection('posts').doc(post.id).update({
-                'comments': FieldValue.arrayUnion([comment]),
+                'comments': FieldValue.arrayUnion(["$_currentUserName: $comment"]),
               });
             },
             onSave: (index) {
@@ -267,9 +342,9 @@ class _MainScreenState extends State<MainScreen> {
           ProfileScreen(
             allPosts: allPosts,
             onDeletePost: (id) => FirebaseFirestore.instance.collection('posts').doc(id).delete(),
-            onReact: (i, r) {}, // Add logic if needed
-            onComment: (i, c) {}, // Add logic if needed
-            onSave: (i) {}, // Add logic if needed
+            onReact: (i, r) {}, 
+            onComment: (i, c) {}, 
+            onSave: (i) {},
           ),
           MessagesScreen(stories: _storyData),
           NotificationsScreen(),

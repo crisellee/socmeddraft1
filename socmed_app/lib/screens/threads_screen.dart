@@ -29,6 +29,8 @@ class _ThreadsScreenState extends State<ThreadsScreen> {
   late List<Post> _allThreads;
   final Map<String, String> _threadReactions = {}; 
   OverlayEntry? _reactionOverlay;
+  String _currentUserName = 'user';
+  String _currentUserProfileImage = 'https://i.pravatar.cc/150?img=11';
 
   final List<Map<String, String>> reactionsList = [
     {'name': 'Love', 'icon': '❤️'},
@@ -42,6 +44,20 @@ class _ThreadsScreenState extends State<ThreadsScreen> {
   void initState() {
     super.initState();
     _allThreads = [...widget.threads, ..._randomThreads];
+    _fetchCurrentUserData();
+  }
+
+  Future<void> _fetchCurrentUserData() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      if (userDoc.exists && mounted) {
+        setState(() {
+          _currentUserName = userDoc.data()?['username'] ?? 'user';
+          _currentUserProfileImage = userDoc.data()?['profileImageUrl'] ?? 'https://i.pravatar.cc/150?u=${user.uid}';
+        });
+      }
+    }
   }
 
   @override
@@ -179,7 +195,7 @@ class _ThreadsScreenState extends State<ThreadsScreen> {
                           itemCount: thread.comments.length,
                           itemBuilder: (context, i) => ListTile(
                             leading: const CircleAvatar(radius: 15, backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=11')),
-                            title: const Text('kriselz_', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            title: const Text('user', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                             subtitle: Text(thread.comments[i]),
                           ),
                         ),
@@ -190,9 +206,13 @@ class _ThreadsScreenState extends State<ThreadsScreen> {
                     TextButton(
                       onPressed: () {
                         if (controller.text.isNotEmpty) {
-                          setState(() => thread.comments.add(controller.text));
-                          setModalState(() {});
-                          controller.clear();
+                          FirebaseFirestore.instance.collection('posts').doc(thread.id).update({
+                            'comments': FieldValue.arrayUnion([controller.text]),
+                          }).then((_) {
+                            setState(() => thread.comments.add(controller.text));
+                            setModalState(() {});
+                            controller.clear();
+                          });
                         }
                       },
                       child: const Text('Post', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
@@ -218,14 +238,16 @@ class _ThreadsScreenState extends State<ThreadsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 10), decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
-            if (thread.username == 'kriselz_')
+            if (thread.username == _currentUserName)
               ListTile(
                 leading: const Icon(Icons.delete_outline, color: Colors.red),
                 title: const Text('Delete Thread', style: TextStyle(color: Colors.red)),
                 onTap: () {
-                  setState(() => _allThreads.remove(thread));
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Thread deleted.')));
+                  FirebaseFirestore.instance.collection('posts').doc(thread.id).delete().then((_) {
+                    setState(() => _allThreads.remove(thread));
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Thread deleted.')));
+                  });
                 },
               ),
             ListTile(
@@ -299,7 +321,7 @@ class _ThreadsScreenState extends State<ThreadsScreen> {
                             children: [
                               Text(thread.username, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                               const SizedBox(width: 8),
-                              if (thread.username != 'kriselz_')
+                              if (thread.username != _currentUserName)
                                 GestureDetector(
                                   onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Following ${thread.username}'))),
                                   child: const Text('Follow', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 13)),

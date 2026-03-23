@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
@@ -8,14 +7,13 @@ class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
 
-  // I-update ang function para tumanggap ng bytes sa halip na path lang
+  // Upload images to Firebase Storage
   Future<List<String>> uploadPostImages(List<Uint8List> imagesBytes) async {
     List<String> downloadUrls = [];
     for (Uint8List bytes in imagesBytes) {
       String fileName = DateTime.now().millisecondsSinceEpoch.toString();
       Reference ref = _storage.ref().child('posts/$fileName');
       
-      // putData ay gumagana sa parehong Web at Mobile
       UploadTask uploadTask = ref.putData(bytes);
 
       TaskSnapshot snapshot = await uploadTask;
@@ -25,7 +23,7 @@ class FirestoreService {
     return downloadUrls;
   }
 
-  // Save Post to Firestore
+  // Save Post to Firestore with safety checks
   Future<DocumentReference> createPost({
     required String username,
     required String userProfileImage,
@@ -53,25 +51,31 @@ class FirestoreService {
     });
   }
 
-  // Stream of Posts
+  // Stream of Posts with data validation to prevent TypeErrors
   Stream<List<Post>> getPosts() {
     return _db.collection('posts')
         .orderBy('timestamp', descending: true)
         .snapshots()
         .map((snapshot) {
       return snapshot.docs.map((doc) {
-        Map<String, dynamic> data = doc.data();
+        final data = doc.data();
+        
+        // Safety check: ensure all fields are the correct type
         return Post(
           id: doc.id,
-          username: data['username'] ?? '',
-          userProfileImage: data['userProfileImage'] ?? '',
-          location: data['location'] ?? '',
-          postImageUrls: List<String>.from(data['postImageUrls'] ?? []),
-          caption: data['caption'] ?? '',
-          timeAgo: 'Just now',
-          likesCount: data['likesCount'] ?? 0,
-          isSaved: data['isSaved'] ?? false,
-          comments: List<String>.from(data['comments'] ?? []),
+          username: data['username']?.toString() ?? '',
+          userProfileImage: data['userProfileImage']?.toString() ?? '',
+          location: data['location']?.toString() ?? '',
+          postImageUrls: (data['postImageUrls'] as List? ?? [])
+              .map((e) => e.toString())
+              .toList(),
+          caption: data['caption']?.toString() ?? '',
+          timeAgo: 'Just now', // You can add logic to format the timestamp
+          likesCount: int.tryParse(data['likesCount']?.toString() ?? '0') ?? 0,
+          isSaved: data['isSaved'] == true,
+          comments: (data['comments'] as List? ?? [])
+              .map((e) => e.toString())
+              .toList(),
         );
       }).toList();
     });

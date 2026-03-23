@@ -109,9 +109,22 @@ class _PostCardState extends State<PostCard> {
                       : ListView.builder(
                           itemCount: widget.post.comments.length,
                           itemBuilder: (context, index) {
+                            final commentData = widget.post.comments[index];
+                            final parts = commentData.split(': ');
+                            final String username = parts.length > 1 ? parts[0] : 'User';
+                            final String comment = parts.length > 1 ? parts.sublist(1).join(': ') : commentData;
+
                             return ListTile(
                               leading: const CircleAvatar(radius: 14, child: Icon(Icons.person, size: 18)),
-                              title: Text(widget.post.comments[index], style: const TextStyle(fontSize: 14)),
+                              title: RichText(
+                                text: TextSpan(
+                                  style: const TextStyle(color: Colors.black, fontSize: 14),
+                                  children: [
+                                    TextSpan(text: "$username ", style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    TextSpan(text: comment),
+                                  ],
+                                ),
+                              ),
                             );
                           },
                         ),
