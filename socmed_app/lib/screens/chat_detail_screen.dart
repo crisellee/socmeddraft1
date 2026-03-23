@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/chat_model.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -11,8 +12,18 @@ import '../services/ai_service.dart';
 import 'dart:typed_data';
 
 class ChatDetailScreen extends StatefulWidget {
-  final ChatConversation conversation;
-  const ChatDetailScreen({super.key, required this.conversation});
+  final String contactName;
+  final String contactImage;
+  final String contactUid;
+  final String? chatId;
+
+  const ChatDetailScreen({
+    super.key, 
+    required this.contactName, 
+    required this.contactImage,
+    required this.contactUid,
+    this.chatId,
+  });
 
   @override
   State<ChatDetailScreen> createState() => _ChatDetailScreenState();
@@ -24,16 +35,27 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   final ImagePicker _picker = ImagePicker();
   final AiService _aiService = AiService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   final AudioRecorder _audioRecorder = AudioRecorder();
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isRecording = false;
   bool _isAiTyping = false;
 
-  // ✅ FIRESTORE: SAVE MESSAGE
+  String get _effectiveChatId {
+    if (widget.chatId != null) return widget.chatId!;
+    List<String> ids = [_auth.currentUser?.uid ?? 'guest', widget.contactUid];
+    ids.sort();
+    return ids.join('_');
+  }
+
   Future<void> _saveMessage(String text, {String? type}) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
     final messageData = {
-      'senderId': 'currentUser',
+      'senderId': user.uid,
+      'senderName': user.displayName ?? 'User',
       'text': text,
       'type': type ?? 'text',
       'timestamp': FieldValue.serverTimestamp(),
@@ -41,14 +63,27 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
     await _firestore
         .collection('chats')
-        .doc(widget.conversation.id)
+        .doc(_effectiveChatId)
         .collection('messages')
         .add(messageData);
+    
+    await _firestore.collection('chats').doc(_effectiveChatId).set({
+      'lastMessage': text,
+      'lastTimestamp': FieldValue.serverTimestamp(),
+      'participants': [user.uid, widget.contactUid],
+      'names': {
+        user.uid: user.displayName ?? 'User',
+        widget.contactUid: widget.contactName,
+      },
+      'images': {
+        user.uid: user.photoURL ?? '',
+        widget.contactUid: widget.contactImage,
+      }
+    }, SetOptions(merge: true));
   }
 
-  // ✅ AI RESPONSE LOGIC
   Future<void> _handleAiResponse(String userMessage, {Uint8List? imageBytes, Uint8List? audioBytes}) async {
-    if (widget.conversation.id != 'ai_buddy') return;
+    if (widget.contactUid != 'ai_buddy') return;
 
     setState(() => _isAiTyping = true);
 
@@ -64,7 +99,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (mounted) {
       await _firestore
           .collection('chats')
-          .doc(widget.conversation.id)
+          .doc(_effectiveChatId)
           .collection('messages')
           .add({
         'senderId': 'ai_buddy',
@@ -99,7 +134,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               title: const Text('Share Chat Profile'),
               onTap: () {
                 Navigator.pop(context);
-                Share.share("Chat with ${widget.conversation.username} on SocMed App!");
+                Share.share("Chat with ${widget.contactName} on SnapTalk Buddy!");
               },
             ),
             ListTile(
@@ -116,7 +151,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               onTap: () async {
                 Navigator.pop(context);
                 final batch = _firestore.batch();
-                var snapshots = await _firestore.collection('chats').doc(widget.conversation.id).collection('messages').get();
+                var snapshots = await _firestore.collection('chats').doc(_effectiveChatId).collection('messages').get();
                 for (var doc in snapshots.docs) { batch.delete(doc.reference); }
                 await batch.commit();
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Conversation cleared.")));
@@ -154,7 +189,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (image != null) {
       final bytes = await image.readAsBytes();
       await _saveMessage("IMG:${image.path}", type: 'image');
-      if (widget.conversation.id == 'ai_buddy') _handleAiResponse("", imageBytes: bytes);
+      if (widget.contactUid == 'ai_buddy') _handleAiResponse("", imageBytes: bytes);
     }
   }
 
@@ -163,27 +198,30 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (text.isNotEmpty) {
       _saveMessage(text);
       _messageController.clear();
-      if (widget.conversation.id == 'ai_buddy') _handleAiResponse(text);
+      if (widget.contactUid == 'ai_buddy') _handleAiResponse(text);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final user = _auth.currentUser;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0.5,
-        iconTheme: const IconThemeData(color: Colors.black),
+        iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black),
         title: Row(
           children: [
-            CircleAvatar(radius: 18, backgroundImage: NetworkImage(widget.conversation.userProfileImage)),
+            CircleAvatar(radius: 18, backgroundImage: NetworkImage(widget.contactImage)),
             const SizedBox(width: 10),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.conversation.username, style: const TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
-                if (_isAiTyping) const Text("AI is thinking...", style: TextStyle(color: Colors.purple, fontSize: 11)),
+                Text(widget.contactName, style: TextStyle(color: isDark ? Colors.white : Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
+                if (_isAiTyping) const Text("Thinking...", style: TextStyle(color: Colors.purple, fontSize: 11)),
               ],
             ),
           ],
@@ -198,7 +236,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             child: StreamBuilder<QuerySnapshot>(
               stream: _firestore
                   .collection('chats')
-                  .doc(widget.conversation.id)
+                  .doc(_effectiveChatId)
                   .collection('messages')
                   .orderBy('timestamp', descending: true)
                   .snapshots(),
@@ -208,35 +246,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 return ListView.builder(
                   reverse: true,
                   padding: const EdgeInsets.all(16),
-                  itemCount: _isAiTyping ? docs.length + 1 : docs.length,
+                  itemCount: docs.length,
                   itemBuilder: (context, index) {
-                    if (_isAiTyping && index == 0) {
-                      return Align(
-                        alignment: Alignment.centerLeft,
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(vertical: 4),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: Colors.purple.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: const Text("Typing...", style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic, fontSize: 13)),
-                        ),
-                      );
-                    }
-
-                    final data = docs[_isAiTyping ? index - 1 : index].data() as Map<String, dynamic>;
-                    final isMe = data['senderId'] == 'currentUser';
+                    final data = docs[index].data() as Map<String, dynamic>;
+                    final isMe = data['senderId'] == user?.uid;
                     return Align(
                       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
                       child: Container(
                         margin: const EdgeInsets.symmetric(vertical: 4),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
-                          color: isMe ? _bubbleColor : (data['senderId'] == 'ai_buddy' ? Colors.purple.withOpacity(0.1) : Colors.grey[200]),
+                          color: isMe ? _bubbleColor : (data['senderId'] == 'ai_buddy' ? Colors.purple.withOpacity(0.1) : (isDark ? Colors.grey[800] : Colors.grey[200])),
                           borderRadius: BorderRadius.circular(18),
                         ),
-                        child: Text(data['text'] ?? "", style: TextStyle(color: isMe ? Colors.white : Colors.black)),
+                        child: Text(data['text'] ?? "", style: TextStyle(color: isMe ? Colors.white : (isDark ? Colors.white : Colors.black))),
                       ),
                     );
                   },
@@ -246,13 +269,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-            decoration: BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Colors.grey[200]!))),
+            decoration: BoxDecoration(
+              color: Theme.of(context).scaffoldBackgroundColor, 
+              border: Border(top: BorderSide(color: isDark ? Colors.grey[800]! : Colors.grey[200]!))
+            ),
             child: Row(
               children: [
                 IconButton(icon: const Icon(Icons.image_outlined), onPressed: _handleImagePick),
                 Expanded(
                   child: TextField(
                     controller: _messageController,
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black),
                     decoration: const InputDecoration(hintText: "Message...", border: InputBorder.none),
                     onSubmitted: (_) => _handleSendMessage(),
                   ),

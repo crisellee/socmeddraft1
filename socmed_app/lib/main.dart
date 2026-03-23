@@ -91,29 +91,6 @@ class _MainScreenState extends State<MainScreen> {
   String _currentUserName = 'user';
   String _currentUserProfileImage = 'https://i.pravatar.cc/150?img=11';
 
-  final List<Post> _posts = [
-    Post(
-      id: '1',
-      username: 'ynnah_314',
-      userProfileImage: 'https://i.pravatar.cc/150?img=1',
-      location: 'Manila, Philippines',
-      postImageUrls: ['https://picsum.photos/600/600?random=1'],
-      caption: 'February Celebrant ... more',
-      timeAgo: '1w',
-      likesCount: 2,
-    ),
-    Post(
-      id: '2',
-      username: 'capcaprice',
-      userProfileImage: 'https://i.pravatar.cc/150?img=2',
-      location: 'GMA Network',
-      postImageUrls: ['https://picsum.photos/600/800?random=2'],
-      caption: 'Enjoying the day!',
-      timeAgo: '1d',
-      likesCount: 150,
-    ),
-  ];
-
   final List<Map<String, String>> _storyData = [
     {'username': 'Your Story', 'imageUrl': 'https://i.pravatar.cc/150?img=11'},
     {'username': 'blythe', 'imageUrl': 'https://i.pravatar.cc/150?img=11'},
@@ -145,49 +122,29 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  void _handleReact(int index, String reaction) {
-    setState(() {
-      if (_posts[index].reaction == 'None' && reaction != 'None') {
-        _posts[index].likesCount++;
-      } else if (_posts[index].reaction != 'None' && reaction == 'None') {
-        _posts[index].likesCount--;
-      }
-      _posts[index].reaction = reaction;
-    });
-  }
-
-  void _handleSave(int index) async {
-    final post = _posts[index];
+  Future<void> _handlePost(String cap, List<String> urls, String loc) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    setState(() {
-      post.isSaved = !post.isSaved;
+    await FirebaseFirestore.instance.collection('posts').add({
+      'username': _currentUserName,
+      'userProfileImage': _currentUserProfileImage,
+      'caption': cap,
+      'postImageUrls': urls,
+      'location': loc,
+      'timestamp': FieldValue.serverTimestamp(),
+      'likesCount': 0,
+      'isSaved': false,
+      'comments': [],
     });
 
-    try {
-      final savedRef = FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('saved_posts')
-          .doc(post.id);
-
-      if (post.isSaved) {
-        await savedRef.set({
-          'id': post.id,
-          'username': post.username,
-          'userProfileImage': post.userProfileImage,
-          'caption': post.caption,
-          'postImageUrls': post.postImageUrls,
-          'timestamp': FieldValue.serverTimestamp(),
-          'type': post.postImageUrls.isEmpty ? 'thread' : 'post',
-        });
+    setState(() {
+      if (urls.isEmpty) {
+        _selectedIndex = 8;
       } else {
-        await savedRef.delete();
+        _selectedIndex = 0;
       }
-    } catch (e) {
-      debugPrint("Error saving post: $e");
-    }
+    });
   }
 
   void _showMoreMenu(BuildContext context) {
@@ -255,90 +212,104 @@ class _MainScreenState extends State<MainScreen> {
     double screenWidth = MediaQuery.of(context).size.width;
     bool isWeb = screenWidth > 800;
 
-    final List<Widget> pages = [
-      HomePage(
-        posts: _posts.where((p) => p.postImageUrls.isNotEmpty).toList(),
-        stories: _storyData,
-        onReact: (filteredIndex, react) {
-          final post = _posts.where((p) => p.postImageUrls.isNotEmpty).toList()[filteredIndex];
-          final originalIndex = _posts.indexOf(post);
-          _handleReact(originalIndex, react);
-        },
-        onComment: (filteredIndex, c) {
-          final post = _posts.where((p) => p.postImageUrls.isNotEmpty).toList()[filteredIndex];
-          setState(() => post.comments.add(c));
-        },
-        onSave: (filteredIndex) {
-          final post = _posts.where((p) => p.postImageUrls.isNotEmpty).toList()[filteredIndex];
-          _handleSave(_posts.indexOf(post));
-        },
-        onDirectMessage: () => setState(() => _selectedIndex = 5),
-      ),
-      const ExploreScreen(),
-      AddPostScreen(
-          onPost: (cap, urls, loc) => setState(() {
-            _posts.insert(0, Post(
-              id: DateTime.now().toString(), 
-              username: _currentUserName, 
-              userProfileImage: _currentUserProfileImage,
-              postImageUrls: urls, 
-              caption: cap, 
-              location: loc, 
-              timeAgo: 'JUST NOW'
-            ));
-            if (urls.isEmpty) {
-              _selectedIndex = 8; 
-            } else {
-              _selectedIndex = 0; 
-            }
-          }),
-          onAddStory: (url) => setState(() => _storyData.insert(1, {'username': 'Your Story', 'imageUrl': url})),
-          onClose: () => setState(() => _selectedIndex = 0)),
-      const ReelsScreen(),
-      ProfileScreen(
-        allPosts: _posts,
-        onDeletePost: (id) => setState(() => _posts.removeWhere((p) => p.id == id)),
-        onReact: _handleReact,
-        onComment: (i, c) => setState(() => _posts[i].comments.add(c)),
-        onSave: (i) => _handleSave(i),
-      ),
-      MessagesScreen(stories: _storyData),
-      NotificationsScreen(),
-      const SearchScreen(),
-      ThreadsScreen(threads: _posts.where((p) => p.postImageUrls.isEmpty).toList()),
-    ];
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('posts').orderBy('timestamp', descending: true).snapshots(),
+      builder: (context, snapshot) {
+        List<Post> allPosts = [];
+        if (snapshot.hasData) {
+          allPosts = snapshot.data!.docs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return Post(
+              id: doc.id,
+              username: data['username'] ?? '',
+              userProfileImage: data['userProfileImage'] ?? '',
+              location: data['location'] ?? '',
+              postImageUrls: List<String>.from(data['postImageUrls'] ?? []),
+              caption: data['caption'] ?? '',
+              timeAgo: 'Just now', // You can add logic to format the timestamp
+              likesCount: data['likesCount'] ?? 0,
+              isSaved: data['isSaved'] ?? false,
+              comments: List<String>.from(data['comments'] ?? []),
+            );
+          }).toList();
+        }
 
-    return Scaffold(
-      body: Row(
-        children: [
-          if (isWeb) _buildSidebar(context),
-          Expanded(
-            child: Container(
-              alignment: Alignment.topCenter,
-              color: Theme.of(context).scaffoldBackgroundColor,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 600,
-                    child: IndexedStack(
-                      index: _selectedIndex < pages.length && _selectedIndex >= 0 ? _selectedIndex : 0,
-                      children: pages,
-                    ),
-                  ),
-                  if (isWeb && screenWidth > 1150 && (_selectedIndex == 0 || _selectedIndex == 8))
-                    Padding(
-                      padding: const EdgeInsets.only(left: 50, top: 40),
-                      child: SizedBox(width: 320, child: _buildSuggestions(screenWidth)),
-                    ),
-                ],
-              ),
-            ),
+        final List<Widget> pages = [
+          HomePage(
+            posts: allPosts.where((p) => p.postImageUrls.isNotEmpty).toList(),
+            stories: _storyData,
+            onReact: (index, reaction) {
+              final post = allPosts.where((p) => p.postImageUrls.isNotEmpty).toList()[index];
+              FirebaseFirestore.instance.collection('posts').doc(post.id).update({
+                'likesCount': reaction != 'None' ? post.likesCount + 1 : post.likesCount - (post.likesCount > 0 ? 1 : 0),
+              });
+            },
+            onComment: (index, comment) {
+              final post = allPosts.where((p) => p.postImageUrls.isNotEmpty).toList()[index];
+              FirebaseFirestore.instance.collection('posts').doc(post.id).update({
+                'comments': FieldValue.arrayUnion([comment]),
+              });
+            },
+            onSave: (index) {
+              final post = allPosts.where((p) => p.postImageUrls.isNotEmpty).toList()[index];
+              FirebaseFirestore.instance.collection('posts').doc(post.id).update({
+                'isSaved': !post.isSaved,
+              });
+            },
+            onDirectMessage: () => setState(() => _selectedIndex = 5),
           ),
-        ],
-      ),
-      bottomNavigationBar: isWeb ? null : _buildBottomNav(),
+          const ExploreScreen(),
+          AddPostScreen(
+              onPost: _handlePost,
+              onAddStory: (url) => setState(() => _storyData.insert(1, {'username': 'Your Story', 'imageUrl': url})),
+              onClose: () => setState(() => _selectedIndex = 0)),
+          const ReelsScreen(),
+          ProfileScreen(
+            allPosts: allPosts,
+            onDeletePost: (id) => FirebaseFirestore.instance.collection('posts').doc(id).delete(),
+            onReact: (i, r) {}, // Add logic if needed
+            onComment: (i, c) {}, // Add logic if needed
+            onSave: (i) {}, // Add logic if needed
+          ),
+          MessagesScreen(stories: _storyData),
+          NotificationsScreen(),
+          const SearchScreen(),
+          ThreadsScreen(threads: allPosts.where((p) => p.postImageUrls.isEmpty).toList()),
+        ];
+
+        return Scaffold(
+          body: Row(
+            children: [
+              if (isWeb) _buildSidebar(context),
+              Expanded(
+                child: Container(
+                  alignment: Alignment.topCenter,
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 600,
+                        child: IndexedStack(
+                          index: _selectedIndex < pages.length && _selectedIndex >= 0 ? _selectedIndex : 0,
+                          children: pages,
+                        ),
+                      ),
+                      if (isWeb && screenWidth > 1150 && (_selectedIndex == 0 || _selectedIndex == 8))
+                        Padding(
+                          padding: const EdgeInsets.only(left: 50, top: 40),
+                          child: SizedBox(width: 320, child: _buildSuggestions(screenWidth)),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          bottomNavigationBar: isWeb ? null : _buildBottomNav(),
+        );
+      }
     );
   }
 

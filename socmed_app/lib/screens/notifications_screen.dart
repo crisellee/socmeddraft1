@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../models/notification_model.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -9,116 +10,94 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  final List<NotificationItem> _notifications = [
-    NotificationItem(
-      id: '1',
-      username: 'alice_wonder',
-      userProfileImage: 'https://i.pravatar.cc/150?img=1',
-      type: NotificationType.like,
-      postImage: 'https://picsum.photos/100/100?random=1',
-      timeAgo: '2m',
-    ),
-    NotificationItem(
-      id: '2',
-      username: 'bob_builder',
-      userProfileImage: 'https://i.pravatar.cc/150?img=2',
-      type: NotificationType.follow,
-      timeAgo: '1h',
-    ),
-    NotificationItem(
-      id: '3',
-      username: 'charlie_fit',
-      userProfileImage: 'https://i.pravatar.cc/150?img=3',
-      type: NotificationType.comment,
-      postImage: 'https://picsum.photos/100/100?random=3',
-      timeAgo: '5h',
-    ),
-  ];
+  final currentUser = FirebaseAuth.instance.currentUser;
 
-  void _handleFollow(int index) {
-    setState(() {
-      // Toggle follow state logic can be added here
+  Future<void> _acceptRequest(String notificationId, Map<String, dynamic> data) async {
+    if (currentUser == null) return;
+
+    final String fromId = data['fromId'];
+    
+    // 1. Add to followers/following
+    final batch = FirebaseFirestore.instance.batch();
+    
+    // Current user follows back (optional, but usually "Accept" means both follow each other in some apps, 
+    // or just "Allow" them to follow you). Let's make it a mutual follow.
+    
+    batch.set(FirebaseFirestore.instance.collection('users').doc(currentUser!.uid).collection('followers').doc(fromId), {'timestamp': FieldValue.serverTimestamp()});
+    batch.set(FirebaseFirestore.instance.collection('users').doc(fromId).collection('following').doc(currentUser!.uid), {'timestamp': FieldValue.serverTimestamp()});
+
+    // 2. Update notification status
+    batch.update(FirebaseFirestore.instance.collection('users').doc(currentUser!.uid).collection('notifications').doc(notificationId), {
+      'status': 'accepted',
+      'message': 'is now following you.',
+      'type': 'follow', // Change type so it looks like a normal follow now
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('You are now following ${_notifications[index].username}')),
-    );
+
+    await batch.commit();
+  }
+
+  Future<void> _deleteNotification(String id) async {
+    await FirebaseFirestore.instance.collection('users').doc(currentUser!.uid).collection('notifications').doc(id).delete();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (currentUser == null) return const Scaffold(body: Center(child: Text("Please log in")));
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Notifications', style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white,
-        elevation: 0,
-      ),
-      body: ListView.builder(
-        itemCount: _notifications.length,
-        itemBuilder: (context, index) {
-          final notification = _notifications[index];
-          return ListTile(
-            leading: CircleAvatar(
-              backgroundImage: NetworkImage(notification.userProfileImage),
-            ),
-            title: RichText(
-              text: TextSpan(
-                style: const TextStyle(color: Colors.black),
-                children: [
-                  TextSpan(
-                    text: notification.username,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+      backgroundColor: Colors.white,
+      appBar: AppBar(title: const Text('Notifications', style: TextStyle(fontWeight: FontWeight.bold))),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('users').doc(currentUser!.uid)
+            .collection('notifications')
+            .orderBy('timestamp', descending: true)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          final docs = snapshot.data!.docs;
+
+          return ListView.builder(
+            itemCount: docs.length,
+            itemBuilder: (context, index) {
+              final docId = docs[index].id;
+              final data = docs[index].data() as Map<String, dynamic>;
+              final String type = data['type'] ?? '';
+              
+              return ListTile(
+                leading: CircleAvatar(backgroundImage: NetworkImage(data['fromImage'] ?? 'https://i.pravatar.cc/150')),
+                title: RichText(
+                  text: TextSpan(
+                    style: const TextStyle(color: Colors.black, fontSize: 14),
+                    children: [
+                      TextSpan(text: data['fromName'] ?? 'User', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      TextSpan(text: ' ${data['message']}'),
+                    ],
                   ),
-                  TextSpan(text: _getNotificationText(notification.type)),
-                  TextSpan(
-                    text: ' ${notification.timeAgo}',
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-            trailing: _getNotificationTrailing(notification, index),
-            onTap: () {
-              // Logic to open the specific post or profile
+                ),
+                trailing: type == 'follow_request' && data['status'] == 'pending'
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ElevatedButton(
+                          onPressed: () => _acceptRequest(docId, data),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12), minimumSize: const Size(60, 30)),
+                          child: const Text('Accept', style: TextStyle(fontSize: 12)),
+                        ),
+                        const SizedBox(width: 4),
+                        OutlinedButton(
+                          onPressed: () => _deleteNotification(docId),
+                          style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12), minimumSize: const Size(60, 30)),
+                          child: const Text('Delete', style: TextStyle(fontSize: 12)),
+                        ),
+                      ],
+                    )
+                  : IconButton(icon: const Icon(Icons.close, size: 18, color: Colors.grey), onPressed: () => _deleteNotification(docId)),
+              );
             },
           );
         },
       ),
     );
-  }
-
-  String _getNotificationText(NotificationType type) {
-    switch (type) {
-      case NotificationType.like:
-        return ' liked your post.';
-      case NotificationType.comment:
-        return ' commented on your post.';
-      case NotificationType.follow:
-        return ' started following you.';
-    }
-  }
-
-  Widget _getNotificationTrailing(NotificationItem item, int index) {
-    if (item.type == NotificationType.follow) {
-      return SizedBox(
-        width: 90,
-        height: 30,
-        child: ElevatedButton(
-          onPressed: () => _handleFollow(index),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.blue,
-            foregroundColor: Colors.white,
-            padding: EdgeInsets.zero,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ),
-          child: const Text('Follow', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-        ),
-      );
-    } else if (item.postImage != null) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: Image.network(item.postImage!, width: 40, height: 40, fit: BoxFit.cover),
-      );
-    }
-    return const SizedBox.shrink();
   }
 }
